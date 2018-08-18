@@ -53,14 +53,12 @@ static map<string, pool_t> pools = {
                             "@us1-etc.ethermine.org:5555"}}};
 
 static double revenue = 0.0;
-static stringstream coinlist;
 
 // Query whattomine.com for the most profitable coin
-static string FindBestCoin()
+static string FindBestCoin(std::stringstream& coinlist)
 {
     try
     {
-        coinlist.clear();
         // Retrieve the list of coins as json formatted file
         system("wget -q -O coins.json https://whattomine.com/coins.json");
         ifstream ifs("coins.json");
@@ -94,7 +92,7 @@ static string FindBestCoin()
                         {
                             double rate = (1.0 - it->second.poolfee) * (1.0 - it->second.exchfee);
                             double rev = atof((*inner)["btc_revenue"].asString().c_str()) * rate;
-                            coinlist << setw(20) << coin << " " << rev << '\n';
+                            coinlist << setw(20) << left << coin << " " << rev << '\n';
                             // Save the most profitable
                             if (rev > revenue)
                             {
@@ -139,7 +137,6 @@ static unsigned minutes = 0;
 // Launch the miner in a separate process
 static void Launch(const char* argv)
 {
-	cout << "Parameters: " << argv << '\n';
     auto common = split(commonCmd);
     auto pools = split(argv);
     common.insert(common.end(), pools.begin(), pools.end());
@@ -185,24 +182,17 @@ int main()
             minutes -= POLLMINUTES;
         else
         {
+            stringstream coinlist;
             minutes = 0;
             // Get the best coin choice from whattomine
-            string bestcoin = FindBestCoin();
+            string bestcoin = FindBestCoin(coinlist);
             // Ignore errors and check to see if a better choice has been found
             if ((bestcoin != "error") && (bestcoin != lastcoin) && (revenue != lastRevenue))
             {
                 lastRevenue = revenue;
 
-                auto now = chrono::system_clock::now();
-                auto mins = std::chrono::duration_cast<std::chrono::seconds>(now - lasttime);
-                lasttime = now;
-
                 std::ofstream file;
                 file.open("whatlog.txt", std::ios::out | std::ios::app);
-                if (mins.count())
-                    file << " - " << mins.count() / 60.0 << " minutes";
-                file << endl;
-                file.close();
 
                 // Kill current miner
                 if (pid)
@@ -211,22 +201,30 @@ int main()
                     waitpid(pid, 0, 0);
                     sleep(1);
                 }
+
+                auto now = chrono::system_clock::now();
+                auto mins = std::chrono::duration_cast<std::chrono::seconds>(now - lasttime);
+                lasttime = now;
+
+                coinlist << "Runtime: " << mins.count() / 60.0 << " minutes\n===\n";
+
+
                 lastcoin = bestcoin;
-
-                cout << coinlist.str();
-
-                cout << endl
-                     << endl
-                     << "Switching to " << bestcoin << " - " << revenue << endl
-                     << endl;
 
                 auto timenow = chrono::system_clock::to_time_t(now);
                 char* ct = ctime(&timenow);
                 ct[strlen(ct) - 1] = 0;
-                file << setw(15) << left << bestcoin << " - " << setw(11) << revenue << " - " << ct;
+
+                coinlist << "Switching to: " << bestcoin << ", " << revenue << ", " << ct << '\n'
+                         << "Parameters: " << pools[bestcoin].cmd << '\n';
+
+                cout << coinlist.str();
+                file << coinlist.str();
 
                 // Start mining new best coin
                 Launch(pools[bestcoin].cmd);
+
+                file.close();
             }
         }
 
