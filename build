@@ -1,0 +1,9 @@
+#!/bin/bash
+if [ "$HOSTNAME" == "miner0" ]; then
+	GPU="NVIDIA"
+else
+	GPU="AMD"
+fi
+echo sudo g++  main.cpp -std=c++11 -ljsoncpp -o /usr/local/bin/whattomine -D$GPU -DETHWALLET=$ETHWALLET -DETCWALLET=$ETCWALLET
+sudo g++  main.cpp -std=c++11 -ljsoncpp -o /usr/local/bin/whattomine -DGPU=$GPU -DETHWALLET=$ETHWALLET -DETCWALLET=$ETCWALLET
+
