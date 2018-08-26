@@ -28,7 +28,7 @@ static const char* const commonCmd =
     EXECUTABLE GPU_COMMON " -G";
 #define MINER "miner1"
 #else
-    EXECUTABLE GPU_COMMON " -U --cuda-streams 4 --cuda-block-size 64";
+    EXECUTABLE GPU_COMMON " -U --cuda-streams 2 --cuda-block-size 64";
 #define MINER "miner0"
 #endif
 
@@ -135,14 +135,20 @@ static unsigned minutes = 0;
 #define POLLMINUTES 2
 
 // Launch the miner in a separate process
-static void Launch(const char* argv)
+static void Launch(const char* argv, stringstream& coinlist)
 {
     auto common = split(commonCmd);
     auto pools = split(argv);
     common.insert(common.end(), pools.begin(), pools.end());
     char** args = (char**)calloc(common.size() + 1, sizeof(char*));
+    coinlist << "Command: ";
     for (unsigned i = 0; i < common.size(); i++)
+    {
         args[i] = (char*)common[i].c_str();
+        coinlist << common[i] << ' ';
+    }
+    coinlist << '\n';
+
     args[common.size()] = NULL;
 
     /*Spawn a child to run the program.*/
@@ -215,14 +221,13 @@ int main()
                 char* ct = ctime(&timenow);
                 ct[strlen(ct) - 1] = 0;
 
-                coinlist << "Switching to: " << bestcoin << ", " << revenue << ", " << ct << '\n'
-                         << "Parameters: " << pools[bestcoin].cmd << '\n';
+                coinlist << "Switching to: " << bestcoin << ", " << revenue << ", " << ct << '\n';
+
+                // Start mining new best coin
+                Launch(pools[bestcoin].cmd, coinlist);
 
                 cout << coinlist.str();
                 file << coinlist.str();
-
-                // Start mining new best coin
-                Launch(pools[bestcoin].cmd);
 
                 file.close();
             }
