@@ -139,8 +139,8 @@ static void Launch(const char* argv, stringstream& coinlist, int ac, char* av[])
     auto common = split(commonCmd);
     auto pools = split(argv);
     common.insert(common.end(), pools.begin(), pools.end());
-    for (int i = 0; i < ac; i++)
-        common.push_back(av[i] + ' ');
+    for (int i = 1; i < ac; i++)
+        common.push_back(string(av[i]));
     char** args = (char**)calloc(common.size() + 1, sizeof(char*));
     coinlist << "Command: ";
     for (unsigned i = 0; i < common.size(); i++)
@@ -224,7 +224,7 @@ int main(int ac, char* av[])
                 coinlist << "Switching to: " << bestcoin << ", " << revenue << ", " << ct << '\n';
 
                 // Start mining new best coin
-                Launch(pools[bestcoin].cmd, coinlist, ac - 1, av + 1);
+                Launch(pools[bestcoin].cmd, coinlist, ac, av);
 
                 cout << coinlist.str();
                 file << coinlist.str();
