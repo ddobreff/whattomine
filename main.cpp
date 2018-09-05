@@ -45,12 +45,11 @@ typedef struct
 // Supported coins (ethash)
 static map<string, pool_t> pools = {
     // coin,(pool fee, exchange fee, pool)
-    {"Ethereum", {.01, .000,
-                     "-P stratum+tls12://" WALLET(ETHWALLET) "." MINER
-                     "@us1.ethermine.org:5555"}},
-    {"EthereumClassic", {.01, .000,
-                            "-P stratum+tls12://" WALLET(ETCWALLET) "." MINER
-                            "@us1-etc.ethermine.org:5555"}}};
+    {"Ethereum",
+        {.01, .000, "-P stratum+tls12://" WALLET(ETHWALLET) "." MINER "@us1.ethermine.org:5555"}},
+    {"EthereumClassic",
+        {.01, .000,
+            "-P stratum+tls12://" WALLET(ETCWALLET) "." MINER "@us1-etc.ethermine.org:5555"}}};
 
 static double revenue = 0.0;
 
@@ -135,11 +134,13 @@ static unsigned minutes = 0;
 #define POLLMINUTES 2
 
 // Launch the miner in a separate process
-static void Launch(const char* argv, stringstream& coinlist)
+static void Launch(const char* argv, stringstream& coinlist, int ac, char* av[])
 {
     auto common = split(commonCmd);
     auto pools = split(argv);
     common.insert(common.end(), pools.begin(), pools.end());
+    for (int i = 0; i < ac; i++)
+        common.push_back(av[i] + ' ');
     char** args = (char**)calloc(common.size() + 1, sizeof(char*));
     coinlist << "Command: ";
     for (unsigned i = 0; i < common.size(); i++)
@@ -164,7 +165,7 @@ static void Launch(const char* argv, stringstream& coinlist)
 }
 
 // Check whattomine every minute for most profitable coin
-int main()
+int main(int ac, char* av[])
 {
     string lastcoin;
     double lastRevenue = 0.0;
@@ -214,7 +215,6 @@ int main()
 
                 coinlist << "Runtime: " << mins.count() / 60.0 << " minutes\n===\n";
 
-
                 lastcoin = bestcoin;
 
                 auto timenow = chrono::system_clock::to_time_t(now);
@@ -224,7 +224,7 @@ int main()
                 coinlist << "Switching to: " << bestcoin << ", " << revenue << ", " << ct << '\n';
 
                 // Start mining new best coin
-                Launch(pools[bestcoin].cmd, coinlist);
+                Launch(pools[bestcoin].cmd, coinlist, ac - 1, av + 1);
 
                 cout << coinlist.str();
                 file << coinlist.str();
@@ -237,4 +237,3 @@ int main()
     }
     return 0;
 }
-
