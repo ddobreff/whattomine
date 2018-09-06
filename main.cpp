@@ -28,7 +28,7 @@ static const char* const commonCmd =
     EXECUTABLE GPU_COMMON " -G";
 #define MINER "miner1"
 #else
-    EXECUTABLE GPU_COMMON " -U --cuda-streams 2 --cuda-block-size 64";
+    EXECUTABLE GPU_COMMON " -U";
 #define MINER "miner0"
 #endif
 
