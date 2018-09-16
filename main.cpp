@@ -49,7 +49,11 @@ static map<string, pool_t> pools = {
         {.01, .000, "-P stratum+tls12://" WALLET(ETHWALLET) "." MINER "@us1.ethermine.org:5555"}},
     {"EthereumClassic",
         {.01, .000,
-            "-P stratum+tls12://" WALLET(ETCWALLET) "." MINER "@us1-etc.ethermine.org:5555"}}};
+            "-P stratum+tls12://" WALLET(ETCWALLET) "." MINER "@us1-etc.ethermine.org:5555"}}
+    //    ,{"Metaverse",
+    //        {.001, .001,
+    //            "-P stratum://" WALLET(ETPWALLET) "." MINER "@etp.sandpool.org:8009"}}
+};
 
 static double revenue = 0.0;
 
@@ -128,10 +132,14 @@ static vector<string> split(const char* str)
     return result;
 }
 
-static pid_t pid = 0;
-static unsigned minutes = 0;
+#define SECONDS(s) (s)
+#define MINUTES(m) (m * SECONDS(60u))
+#define POLL_INTERVAL SECONDS(10u)
+#define WTM_INTERVAL (30u * POLL_INTERVAL)
 
-#define POLLMINUTES 2
+static pid_t pid = 0;
+static unsigned poll_seconds = 0;
+static unsigned wtm_seconds = 0;
 
 // Launch the miner in a separate process
 static void Launch(const char* argv, stringstream& coinlist, int ac, char* av[])
@@ -160,8 +168,6 @@ static void Launch(const char* argv, stringstream& coinlist, int ac, char* av[])
         exit(-1); /* only if execv fails */
     }
     free(args);
-    // Stay on coin at least 2 minutes
-    minutes = 3;
 }
 
 // Check whattomine every minute for most profitable coin
@@ -181,59 +187,68 @@ int main(int ac, char* av[])
                 // miner has self terminated
                 lastcoin = "";
                 pid = 0;
-                minutes = 0;
+                poll_seconds = 0;
+                wtm_seconds = 0;
+                lastRevenue = 0;
             }
         }
 
-        if (minutes > POLLMINUTES)
-            minutes -= POLLMINUTES;
+        if (poll_seconds > POLL_INTERVAL)
+            poll_seconds -= POLL_INTERVAL;
         else
         {
-            stringstream coinlist;
-            minutes = 0;
-            // Get the best coin choice from whattomine
-            string bestcoin = FindBestCoin(coinlist);
-            // Ignore errors and check to see if a better choice has been found
-            if ((bestcoin != "error") && (bestcoin != lastcoin) && (revenue != lastRevenue))
+            poll_seconds = POLL_INTERVAL;
+            if (wtm_seconds > POLL_INTERVAL)
+                wtm_seconds -= POLL_INTERVAL;
+            else
             {
-                lastRevenue = revenue;
-
-                std::ofstream file;
-                file.open("whatlog.txt", std::ios::out | std::ios::app);
-
-                // Kill current miner
-                if (pid)
+                wtm_seconds = WTM_INTERVAL;
+                stringstream coinlist;
+                // Get the best coin choice from whattomine
+                string bestcoin = FindBestCoin(coinlist);
+                // Ignore errors and check to see if a better choice has been found
+                if ((bestcoin != "error") && (bestcoin != lastcoin) && (revenue != lastRevenue))
                 {
-                    kill(pid, SIGINT);
-                    waitpid(pid, 0, 0);
-                    sleep(1);
+                    lastRevenue = revenue;
+
+                    std::ofstream file;
+                    file.open("whatlog.txt", std::ios::out | std::ios::app);
+
+                    // Kill current miner
+                    if (pid)
+                    {
+                        kill(pid, SIGINT);
+                        waitpid(pid, 0, 0);
+                        sleep(1);
+                    }
+
+                    auto now = chrono::system_clock::now();
+                    auto mins = std::chrono::duration_cast<std::chrono::seconds>(now - lasttime);
+                    lasttime = now;
+
+                    coinlist << "Runtime: " << mins.count() / 60.0 << " minutes\n===\n";
+
+                    lastcoin = bestcoin;
+
+                    auto timenow = chrono::system_clock::to_time_t(now);
+                    char* ct = ctime(&timenow);
+                    ct[strlen(ct) - 1] = 0;
+
+                    coinlist << "Switching to: " << bestcoin << ", " << revenue << ", " << ct
+                             << '\n';
+
+                    // Start mining new best coin
+                    Launch(pools[bestcoin].cmd, coinlist, ac, av);
+
+                    cout << coinlist.str();
+                    file << coinlist.str();
+
+                    file.close();
                 }
-
-                auto now = chrono::system_clock::now();
-                auto mins = std::chrono::duration_cast<std::chrono::seconds>(now - lasttime);
-                lasttime = now;
-
-                coinlist << "Runtime: " << mins.count() / 60.0 << " minutes\n===\n";
-
-                lastcoin = bestcoin;
-
-                auto timenow = chrono::system_clock::to_time_t(now);
-                char* ct = ctime(&timenow);
-                ct[strlen(ct) - 1] = 0;
-
-                coinlist << "Switching to: " << bestcoin << ", " << revenue << ", " << ct << '\n';
-
-                // Start mining new best coin
-                Launch(pools[bestcoin].cmd, coinlist, ac, av);
-
-                cout << coinlist.str();
-                file << coinlist.str();
-
-                file.close();
             }
         }
 
-        sleep(POLLMINUTES * 60);
+        sleep(POLL_INTERVAL);
     }
     return 0;
 }
