@@ -16,6 +16,15 @@
 
 #include <jsoncpp/json/json.h>
 
+#define WTM_DEBUG 0
+
+#define DBGSTR(_s)              \
+    do                          \
+    {                           \
+        if (WTM_DEBUG)          \
+            clog << _s << '\n'; \
+    } while (false)
+
 using namespace std;
 
 // Common part of the miner command
@@ -60,10 +69,13 @@ static double revenue = 0.0;
 // Query whattomine.com for the most profitable coin
 static string FindBestCoin(std::stringstream& coinlist)
 {
+    DBGSTR("FindBestCoin called");
     try
     {
         // Retrieve the list of coins as json formatted file
-        system("wget -q -O coins.json https://whattomine.com/coins.json");
+        DBGSTR("FindBestCoin retreiving JSON");
+        system("wget -q4O coins.json https://whattomine.com/coins.json");
+        DBGSTR("FindBestCoin parsing JSON");
         ifstream ifs("coins.json");
         Json::Reader reader;
         Json::Value root;
@@ -72,6 +84,7 @@ static string FindBestCoin(std::stringstream& coinlist)
             return "error";
         ifs.close();
         remove("coins.json");
+        DBGSTR("FindBestCoin JSON parsed");
 
         string bestcoin = "error";
         revenue = 0.0;
@@ -113,8 +126,10 @@ static string FindBestCoin(std::stringstream& coinlist)
     catch (...)
     {
         // Something went wrong!!!
+        DBGSTR("FindBestCoin returning error");
         return "error";
     }
+    DBGSTR("FindBestCoin returning");
     return 0;
 }
 
