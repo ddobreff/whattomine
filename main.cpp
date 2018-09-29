@@ -16,6 +16,25 @@
 
 #include <jsoncpp/json/json.h>
 
+// Sample config file
+
+//{
+//  "coins": {
+//    "Ethereum": {
+//      "fee":0.01,
+//      "cmd":"/usr/local/bin/ethminer -U -R --display-interval 30 --noeval -P stratum+tls12://0x1234...6789.miner0@us1.ethermine.org:5555"
+//     },
+//     "EthereumClassic": {
+//       "fee":0.01,
+//       "cmd":"/usr/local/bin/ethminer -U -R --display-interval 30 --noeval -P stratum+tls12://0x1234...6789839.miner0@us1-etc.ethermine.org:5555"
+//     },
+//     "Dubaicoin": {
+//       "fee":0.0015,
+//       "cmd":"/usr/local/bin/ethminer -U -R --display-interval 30 --noeval -P stratum://0x1234...6789.miner0@mine.house:7007"
+//     }
+//  }
+//}
+
 #define WTM_DEBUG 0
 
 #define DBGSTR(_s)              \
@@ -27,44 +46,14 @@
 
 using namespace std;
 
-// Common part of the miner command
-
-#define EXECUTABLE "/usr/local/bin/ethminer"
-#define GPU_COMMON " -R --display-interval 30 --noeval"
-
-static const char* const commonCmd =
-#if defined(AMD)
-    EXECUTABLE GPU_COMMON " -G";
-#define MINER "miner1"
-#else
-    EXECUTABLE GPU_COMMON " -U";
-#define MINER "miner0"
-#endif
-
-#define WALLET(x) W2(x)
-#define W2(x) #x
-
-typedef struct
-{
-    double poolfee;
-    double exchfee;
-    const char* cmd;
-} pool_t;
-
-// Supported coins (ethash)
-static map<string, pool_t> pools = {
-    // coin,(pool fee, exchange fee, pool)
-    {"Ethereum",
-        {.01, .000, "-P stratum+tls12://" WALLET(ETHWALLET) "." MINER "@us1.ethermine.org:5555"}},
-    {"EthereumClassic",
-        {.01, .000,
-            "-P stratum+tls12://" WALLET(ETCWALLET) "." MINER "@us1-etc.ethermine.org:5555"}}
-    //    ,{"Metaverse",
-    //        {.001, .001,
-    //            "-P stratum://" WALLET(ETPWALLET) "." MINER "@etp.sandpool.org:8009"}}
-};
-
 static double revenue = 0.0;
+
+Json::Value coinroot;
+
+static bool FindCoin(string coin)
+{
+    return (*coinroot.begin()).isMember(coin);
+}
 
 // Query whattomine.com for the most profitable coin
 static string FindBestCoin(std::stringstream& coinlist)
@@ -95,27 +84,17 @@ static string FindBestCoin(std::stringstream& coinlist)
             for (Json::Value::const_iterator inner = (*outer).begin(); inner != (*outer).end();
                  inner++)
             {
-                for (Json::Value::const_iterator inner2 = (*inner).begin();
-                     inner2 != (*inner).end(); inner2++)
+                string coin = inner.key().asString();
+                if (FindCoin(coin))
                 {
-                    // Only look at Ethash coins
-                    if (inner2.key() == "algorithm" && *inner2 == "Ethash")
+                    float rate = 1.0 - (*coinroot.begin())[coin]["fee"].asFloat();
+                    double rev = atof((*inner)["btc_revenue"].asString().c_str()) * rate;
+                    coinlist << setw(20) << left << coin << " " << rev << '\n';
+                    // Save the most profitable
+                    if (rev > revenue)
                     {
-                        string coin = inner.key().asString();
-                        // Filter the coin types we want to mine
-                        auto it = pools.find(coin);
-                        if (it != pools.end())
-                        {
-                            double rate = (1.0 - it->second.poolfee) * (1.0 - it->second.exchfee);
-                            double rev = atof((*inner)["btc_revenue"].asString().c_str()) * rate;
-                            coinlist << setw(20) << left << coin << " " << rev << '\n';
-                            // Save the most profitable
-                            if (rev > revenue)
-                            {
-                                revenue = rev;
-                                bestcoin = coin;
-                            }
-                        }
+                        revenue = rev;
+                        bestcoin = coin;
                     }
                 }
             }
@@ -157,23 +136,19 @@ static unsigned poll_seconds = 0;
 static unsigned wtm_seconds = 0;
 
 // Launch the miner in a separate process
-static void Launch(const char* argv, stringstream& coinlist, int ac, char* av[])
+static void Launch(const char* argv, stringstream& coinlist)
 {
-    auto common = split(commonCmd);
-    auto pools = split(argv);
-    common.insert(common.end(), pools.begin(), pools.end());
-    for (int i = 1; i < ac; i++)
-        common.push_back(string(av[i]));
-    char** args = (char**)calloc(common.size() + 1, sizeof(char*));
+    auto cmd = split(argv);
+    char** args = (char**)calloc(cmd.size() + 1, sizeof(char*));
     coinlist << "Command: ";
-    for (unsigned i = 0; i < common.size(); i++)
+    for (unsigned i = 0; i < cmd.size(); i++)
     {
-        args[i] = (char*)common[i].c_str();
-        coinlist << common[i] << ' ';
+        args[i] = (char*)cmd[i].c_str();
+        coinlist << cmd[i] << ' ';
     }
     coinlist << '\n';
 
-    args[common.size()] = NULL;
+    args[cmd.size()] = NULL;
 
     /*Spawn a child to run the program.*/
     pid = fork();
@@ -185,9 +160,33 @@ static void Launch(const char* argv, stringstream& coinlist, int ac, char* av[])
     free(args);
 }
 
+bool LoadConfig()
+{
+    ifstream ifs(".wtm.conf");
+    if (!ifs.is_open())
+        return false;
+    Json::Reader reader;
+    // Parse the json contents
+    if (!reader.parse(ifs, coinroot))
+        return false;
+    ifs.close();
+    cout << "Enabled coins:";
+    Json::Value::const_iterator outer = coinroot.begin();
+    for (Json::Value::const_iterator inner = (*outer).begin(); inner != (*outer).end(); inner++)
+        cout << ' ' << inner.key().asString();
+    cout << '\n';
+    // cout << coinroot << '\n';
+    return true;
+}
+
 // Check whattomine every minute for most profitable coin
 int main(int ac, char* av[])
 {
+    if (!LoadConfig())
+    {
+        cerr << "Can't parse .wtm.conf\n";
+        exit(-1);
+    }
     string lastcoin;
     double lastRevenue = 0.0;
     auto lasttime = chrono::system_clock::now();
@@ -253,7 +252,7 @@ int main(int ac, char* av[])
                              << '\n';
 
                     // Start mining new best coin
-                    Launch(pools[bestcoin].cmd, coinlist, ac, av);
+                    Launch((*coinroot.begin())[bestcoin]["cmd"].asString().c_str(), coinlist);
 
                     cout << coinlist.str();
                     file << coinlist.str();
