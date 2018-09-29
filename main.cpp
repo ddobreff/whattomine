@@ -205,20 +205,20 @@ void LoadConfig()
     }
     ifs.close();
 
-    cout << "Using: " << filename << '\n';
-    file << "Using: " << filename << '\n';
+    cout << "======\nUsing: " << filename << "\n";
+    file << "======\nUsing: " << filename << "\n";
 
-    file << "Enabled coins:";
     cout << "Enabled coins:";
     file << "Enabled coins:";
+
     Json::Value::const_iterator outer = coinroot.begin();
     for (Json::Value::const_iterator inner = (*outer).begin(); inner != (*outer).end(); inner++)
     {
         cout << ' ' << inner.key().asString();
         file << ' ' << inner.key().asString();
     }
-    cout << '\n';
-    file << '\n';
+    cout << "\n======\n";
+    file << "\n======\n";
     file.close();
     free(filename);
 }
