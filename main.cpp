@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -160,33 +161,72 @@ static void Launch(const char* argv, stringstream& coinlist)
     free(args);
 }
 
-bool LoadConfig()
+void LoadConfig()
 {
-    ifstream ifs(".wtm.conf");
+    std::ofstream file;
+    file.open("whatlog.txt", std::ios::out | std::ios::app);
+
+    // try the local work directory 1st
+    char* filename = strdup(".wtm.conf");
+    ifstream ifs(filename);
     if (!ifs.is_open())
-        return false;
+    {
+        free(filename);
+        filename = strdup((string(getenv("HOME")) + "/.wtm.conf").c_str());
+        // that didn't work, try the HOME directory
+        ifs.open(filename);
+        if (!ifs.is_open())
+        {
+            free(filename);
+            // that didn't work, try the password file home directory
+            struct passwd* pw = getpwuid(getuid());
+            filename = strdup((string(pw->pw_dir) + "/.wtm.conf").c_str());
+            ifs.open(filename);
+        }
+    }
+    if (!ifs.is_open())
+    {
+        cerr << "Can't find '.wtm.conf' file\n";
+        file << "Can't find '.wtm.conf' file\n";
+        file.close();
+        free(filename);
+        exit(-1);
+    }
     Json::Reader reader;
     // Parse the json contents
     if (!reader.parse(ifs, coinroot))
-        return false;
+    {
+        ifs.close();
+        cerr << "Can't parse file " << filename << '\n';
+        file << "Can't parse file " << filename << '\n';
+        file.close();
+        free(filename);
+        exit(-1);
+    }
     ifs.close();
+
+    cout << "Using: " << filename << '\n';
+    file << "Using: " << filename << '\n';
+
+    file << "Enabled coins:";
     cout << "Enabled coins:";
+    file << "Enabled coins:";
     Json::Value::const_iterator outer = coinroot.begin();
     for (Json::Value::const_iterator inner = (*outer).begin(); inner != (*outer).end(); inner++)
+    {
         cout << ' ' << inner.key().asString();
+        file << ' ' << inner.key().asString();
+    }
     cout << '\n';
-    // cout << coinroot << '\n';
-    return true;
+    file << '\n';
+    file.close();
+    free(filename);
 }
 
 // Check whattomine every minute for most profitable coin
 int main(int ac, char* av[])
 {
-    if (!LoadConfig())
-    {
-        cerr << "Can't parse .wtm.conf\n";
-        exit(-1);
-    }
+    LoadConfig();
     string lastcoin;
     double lastRevenue = 0.0;
     auto lasttime = chrono::system_clock::now();
